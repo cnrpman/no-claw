@@ -4,14 +4,26 @@ function escapeRegex(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-export function stripBotMention(content, botUserId) {
+function stripMentionPattern(content, pattern) {
   if (!content) {
     return "";
   }
 
-  const mentionPattern = new RegExp(`<@!?${escapeRegex(botUserId)}>`, "g");
+  return content.replace(pattern, "").trim();
+}
 
-  return content.replace(mentionPattern, "").trim();
+export function stripBotMention(content, botUserId) {
+  return stripMentionPattern(content, new RegExp(`<@!?${escapeRegex(botUserId)}>`, "g"));
+}
+
+export function stripLeadingDiscordMentions(content) {
+  if (!content) {
+    return "";
+  }
+
+  return content
+    .replace(/^(?:\s*(?:<@!?\d+>|<@&\d+>|<#\d+>|@everyone|@here))+/g, "")
+    .trim();
 }
 
 export function parseMentionCommand(content, botUserId) {
@@ -39,11 +51,16 @@ export function parseMentionCommand(content, botUserId) {
   };
 }
 
+export function canProcessMessageAuthor(author, allowedBotIds = new Set()) {
+  return !author.bot || allowedBotIds.has(author.id);
+}
+
 function formatCount(value) {
   return typeof value === "number" ? value.toLocaleString("en-US") : "?";
 }
 
-export function buildTurnStatusMessage({ mode, codexThreadId, model, usage }) {
+export function buildTurnStatusMessage({ mode, codexThreadId, imageCount = 0, model, usage }) {
+  const imageLine = imageCount > 0 ? `${imageCount} attached` : "none";
   const modeLine = mode === "resume" ? "resumed existing Codex session" : "started new Codex session";
   const contextLine =
     mode === "resume"
@@ -58,6 +75,7 @@ export function buildTurnStatusMessage({ mode, codexThreadId, model, usage }) {
     "**Codex Status**",
     `mode: ${modeLine}`,
     `discord context: ${contextLine}`,
+    `images: ${imageLine}`,
     `model arg: ${modelLine}`,
     `codex thread: \`${codexThreadId}\``,
     `usage: ${usageLine}`
@@ -108,6 +126,14 @@ export function splitDiscordMessage(text, limit = DISCORD_MESSAGE_LIMIT) {
   }
 
   return chunks.filter(Boolean);
+}
+
+export function splitDiscordMessageWithPrefix(prefix, text, limit = DISCORD_MESSAGE_LIMIT) {
+  const firstChunkLimit = Math.max(1, limit - prefix.length - 1);
+  const chunks = splitDiscordMessage(text, firstChunkLimit);
+  const [firstChunk, ...restChunks] = chunks;
+
+  return [`${prefix}\n${firstChunk}`, ...restChunks];
 }
 
 export function formatError(error) {

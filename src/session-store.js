@@ -5,6 +5,7 @@ export class SessionStore {
   constructor(filePath) {
     this.filePath = filePath;
     this.state = {
+      stats: this.#createEmptyStats(),
       threads: {}
     };
   }
@@ -17,7 +18,13 @@ export class SessionStore {
       const parsed = JSON.parse(raw);
 
       if (parsed && typeof parsed === "object" && parsed.threads && typeof parsed.threads === "object") {
-        this.state = parsed;
+        this.state = {
+          stats: {
+            ...this.#createEmptyStats(),
+            ...(parsed.stats && typeof parsed.stats === "object" ? parsed.stats : {})
+          },
+          threads: parsed.threads
+        };
       }
     } catch (error) {
       if (error.code === "ENOENT") {
@@ -33,6 +40,16 @@ export class SessionStore {
     return this.state.threads[threadId] ?? null;
   }
 
+  getStats() {
+    return {
+      ...this.state.stats
+    };
+  }
+
+  countThreads() {
+    return Object.keys(this.state.threads).length;
+  }
+
   async upsert(record) {
     this.state.threads[record.discordThreadId] = {
       ...this.state.threads[record.discordThreadId],
@@ -42,11 +59,57 @@ export class SessionStore {
     await this.#persist();
   }
 
+  async recordTurn({
+    discordThreadId,
+    imageCount = 0,
+    mode,
+    requestedModel = null,
+    usage = null,
+    userId
+  }) {
+    const nextStats = {
+      ...this.state.stats,
+      completedTurns: this.state.stats.completedTurns + 1,
+      lastTurnAt: new Date().toISOString(),
+      lastTurnDiscordThreadId: discordThreadId,
+      lastTurnImageCount: imageCount,
+      lastTurnMode: mode,
+      lastTurnRequestedModel: requestedModel,
+      lastTurnUsage: usage,
+      lastTurnUserId: userId
+    };
+
+    if (usage) {
+      nextStats.totalInputTokens += usage.input_tokens ?? 0;
+      nextStats.totalCachedInputTokens += usage.cached_input_tokens ?? 0;
+      nextStats.totalOutputTokens += usage.output_tokens ?? 0;
+    }
+
+    this.state.stats = nextStats;
+    await this.#persist();
+  }
+
   async #persist() {
     const tempFile = `${this.filePath}.tmp`;
     const body = `${JSON.stringify(this.state, null, 2)}\n`;
 
     await fs.writeFile(tempFile, body, "utf8");
     await fs.rename(tempFile, this.filePath);
+  }
+
+  #createEmptyStats() {
+    return {
+      completedTurns: 0,
+      lastTurnAt: null,
+      lastTurnDiscordThreadId: null,
+      lastTurnImageCount: 0,
+      lastTurnMode: null,
+      lastTurnRequestedModel: null,
+      lastTurnUsage: null,
+      lastTurnUserId: null,
+      totalCachedInputTokens: 0,
+      totalInputTokens: 0,
+      totalOutputTokens: 0
+    };
   }
 }

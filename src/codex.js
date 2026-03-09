@@ -4,42 +4,70 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+export function buildCodexCommandArgs({
+  args,
+  imagePaths = [],
+  model = null,
+  outputFile,
+  prompt,
+  threadId = null
+}) {
+  const commandArgs = [...args, "--skip-git-repo-check", "--json", "-o", outputFile];
+
+  if (model) {
+    commandArgs.push("-m", model);
+  }
+
+  for (const imagePath of imagePaths) {
+    commandArgs.push("-i", imagePath);
+  }
+
+  const positionalArgs = [];
+
+  if (threadId) {
+    positionalArgs.push(threadId);
+  }
+
+  positionalArgs.push(prompt);
+
+  return [...commandArgs, "--", ...positionalArgs];
+}
+
 export class CodexClient {
   constructor({ codexBin, codexCwd }) {
     this.codexBin = codexBin;
     this.codexCwd = codexCwd;
   }
 
-  async createTurn({ prompt, model = null }) {
+  async createTurn({ prompt, model = null, imagePaths = [] }) {
     return this.#run({
       args: ["exec"],
+      imagePaths,
       model,
       prompt
     });
   }
 
-  async resumeTurn({ threadId, prompt, model = null }) {
+  async resumeTurn({ threadId, prompt, model = null, imagePaths = [] }) {
     return this.#run({
       args: ["exec", "resume"],
+      imagePaths,
       model,
       prompt,
       threadId
     });
   }
 
-  async #run({ args, prompt, model = null, threadId = null }) {
+  async #run({ args, prompt, model = null, imagePaths = [], threadId = null }) {
     const outputFile = path.join(os.tmpdir(), `discord-codex-${randomUUID()}.txt`);
-    const commandArgs = [...args, "--skip-git-repo-check", "--json", "-o", outputFile];
-
-    if (model) {
-      commandArgs.push("-m", model);
-    }
-
-    if (threadId) {
-      commandArgs.push(threadId);
-    }
-
-    commandArgs.push(prompt);
+    const commandArgs = buildCodexCommandArgs({
+      args,
+      imagePaths,
+      model,
+      outputFile,
+      prompt,
+      threadId
+    });
 
     const stdoutLines = [];
     const stderrChunks = [];

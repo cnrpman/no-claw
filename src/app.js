@@ -5,9 +5,6 @@ import {
 } from "discord.js";
 
 import { downloadImageAttachments } from "./attachments.js";
-import { CodexClient } from "./codex.js";
-import { getLatestCodexStatus } from "./codex-status.js";
-import { loadConfig } from "./config.js";
 import { SessionStore } from "./session-store.js";
 import {
   buildHelpMessage,
@@ -21,7 +18,7 @@ import {
   formatError,
   parseMentionCommand,
   stripLeadingDiscordMentions,
-  splitDiscordMessageWithPrefix,
+  splitDiscordMessageWithPrefix
 } from "./utils.js";
 
 function log(message, details = {}) {
@@ -29,35 +26,8 @@ function log(message, details = {}) {
   console.log(`${new Date().toISOString()} ${message}${payload}`);
 }
 
-const config = loadConfig();
-const sessionStore = new SessionStore(config.sessionStorePath);
-const codex = new CodexClient(config);
-const activeThreads = new Set();
 const ACK_EMOJI = "👀";
 const TYPING_INTERVAL_MS = 8_000;
-const startedAt = new Date();
-let commandScope = config.discordGuildId ? "guild" : "global";
-
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
-});
-
-function hasAnyDiscordMention(message) {
-  return (
-    message.mentions.everyone ||
-    message.mentions.users.size > 0 ||
-    message.mentions.roles.size > 0 ||
-    message.mentions.channels.size > 0
-  );
-}
-
-function isMentionForBot(message) {
-  return hasAnyDiscordMention(message);
-}
 
 function requirePrompt(prompt) {
   return prompt.trim().length > 0;
@@ -156,339 +126,423 @@ async function sendThreadFailure(thread, requesterId, failureText) {
   await sendCodexFailure(thread, requesterId, failureText);
 }
 
-async function handleNewChannelMention(message, command) {
-  const { model, prompt } = command;
-  let thread;
-  let stopTyping = () => {};
-  let attachments = {
-    count: 0,
-    filePaths: [],
-    cleanup: async () => {}
-  };
+function hasAnyDiscordMention(message) {
+  return (
+    message.mentions.everyone ||
+    message.mentions.users.size > 0 ||
+    message.mentions.roles.size > 0 ||
+    message.mentions.channels.size > 0
+  );
+}
 
-  try {
-    thread = message.hasThread && message.thread
-      ? message.thread
-      : await message.startThread({
-          name: buildThreadName(prompt),
-          autoArchiveDuration: ThreadAutoArchiveDuration.OneDay,
-          reason: `Codex conversation started by ${message.author.tag}`
-        });
-  } catch (error) {
-    throw new Error(`Could not create a thread from this message: ${formatError(error)}`);
-  }
+export async function startBot({
+  allowedBotIds,
+  botName,
+  botToken,
+  client: providerClient,
+  discordGuildId,
+  providerId,
+  providerName,
+  sessionIdLabel,
+  sessionStorePath,
+  statusFetcher = null,
+  workdir
+}) {
+  const sessionStore = new SessionStore(sessionStorePath);
+  const activeThreads = new Set();
+  const startedAt = new Date();
+  let commandScope = discordGuildId ? "guild" : "global";
 
-  stopTyping = startTypingIndicator(thread);
-  activeThreads.add(thread.id);
-
-  log("codex.thread.created", {
-    discordThreadId: thread.id,
-    starterMessageId: message.id,
-    userId: message.author.id
+  const client = new Client({
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.MessageContent
+    ]
   });
 
-  try {
-    attachments = await downloadImageAttachments(message);
-    const result = await codex.createTurn({
-      prompt,
-      model,
-      imagePaths: attachments.filePaths
-    });
-    const now = new Date().toISOString();
+  function isMentionForBot(message) {
+    return Boolean(client.user && message.mentions.users.has(client.user.id));
+  }
 
-    await sessionStore.upsert({
-      discordThreadId: thread.id,
-      discordParentChannelId: message.channelId,
-      starterMessageId: message.id,
-      codexThreadId: result.threadId,
-      createdByUserId: message.author.id,
-      createdAt: now,
+  function getSessionThreadId(session) {
+    return session?.providerThreadId ?? session?.codexThreadId ?? null;
+  }
+
+  function buildSessionRecord({ existingSession = null, message, model, now, threadId, usage }) {
+    const record = {
+      ...(existingSession || {}),
+      createdAt: existingSession?.createdAt ?? now,
+      createdByUserId: existingSession?.createdByUserId ?? message.author.id,
+      discordParentChannelId: existingSession?.discordParentChannelId ?? message.channelId,
+      discordThreadId: message.channel.isThread() ? message.channel.id : null,
       lastActivityAt: now,
       lastRequestedModel: model,
-      lastUsage: result.usage
-    });
-    await sessionStore.recordTurn({
-      discordThreadId: thread.id,
-      imageCount: attachments.count,
-      mode: "new",
-      requestedModel: model,
-      usage: result.usage,
-      userId: message.author.id
-    });
+      lastUsage: usage,
+      providerId,
+      providerThreadId: threadId,
+      starterMessageId: existingSession?.starterMessageId ?? message.id
+    };
 
-    stopTyping();
-    await sendThreadSuccess(
-      thread,
-      message.author.id,
-      buildTurnStatusMessage({
-        mode: "new",
-        codexThreadId: result.threadId,
-        imageCount: attachments.count,
-        model,
-        usage: result.usage
-      }),
-      result.responseText
-    );
-
-    log("codex.turn.created", {
-      discordThreadId: thread.id,
-      codexThreadId: result.threadId,
-      requestedModel: model
-    });
-  } catch (error) {
-    stopTyping();
-    await sendThreadFailure(
-      thread,
-      message.author.id,
-      `Codex request failed: ${formatError(error)}`
-    );
-    log("codex.turn.failed", {
-      discordThreadId: thread.id,
-      error: formatError(error)
-    });
-  } finally {
-    stopTyping();
-    await attachments.cleanup();
-    activeThreads.delete(thread.id);
-  }
-}
-
-async function handleThreadMention(message, command) {
-  const { model, prompt } = command;
-  const thread = message.channel;
-  const session = sessionStore.get(thread.id);
-  let stopTyping = () => {};
-  let attachments = {
-    count: 0,
-    filePaths: [],
-    cleanup: async () => {}
-  };
-
-  if (!session) {
-    await replyWithoutPing(message, "This thread is not connected to a Codex session. Start from a normal channel with `@codex`.");
-    return;
-  }
-
-  if (activeThreads.has(thread.id)) {
-    await replyWithoutPing(message, "A Codex request is already running in this thread.");
-    return;
-  }
-
-  stopTyping = startTypingIndicator(thread);
-  activeThreads.add(thread.id);
-
-  log("codex.thread.resuming", {
-    discordThreadId: thread.id,
-    codexThreadId: session.codexThreadId,
-    userId: message.author.id
-  });
-
-  try {
-    attachments = await downloadImageAttachments(message);
-    const result = await codex.resumeTurn({
-      threadId: session.codexThreadId,
-      imagePaths: attachments.filePaths,
-      prompt,
-      model
-    });
-
-    await sessionStore.upsert({
-      ...session,
-      codexThreadId: result.threadId,
-      lastActivityAt: new Date().toISOString(),
-      lastRequestedModel: model,
-      lastUsage: result.usage
-    });
-    await sessionStore.recordTurn({
-      discordThreadId: thread.id,
-      imageCount: attachments.count,
-      mode: "resume",
-      requestedModel: model,
-      usage: result.usage,
-      userId: message.author.id
-    });
-
-    stopTyping();
-    await sendThreadSuccess(
-      thread,
-      message.author.id,
-      buildTurnStatusMessage({
-        mode: "resume",
-        codexThreadId: result.threadId,
-        imageCount: attachments.count,
-        model,
-        usage: result.usage
-      }),
-      result.responseText
-    );
-
-    log("codex.turn.resumed", {
-      discordThreadId: thread.id,
-      codexThreadId: result.threadId,
-      requestedModel: model
-    });
-  } catch (error) {
-    stopTyping();
-    await sendThreadFailure(
-      thread,
-      message.author.id,
-      `Codex resume failed: ${formatError(error)}`
-    );
-    log("codex.resume.failed", {
-      discordThreadId: thread.id,
-      codexThreadId: session.codexThreadId,
-      error: formatError(error)
-    });
-  } finally {
-    stopTyping();
-    await attachments.cleanup();
-    activeThreads.delete(thread.id);
-  }
-}
-
-client.once("clientReady", () => {
-  log("discord.ready", {
-    botUserId: client.user?.id,
-    botTag: client.user?.tag,
-    codexCwd: config.codexCwd
-  });
-});
-
-client.once("clientReady", async () => {
-  try {
-    const result = await registerSlashCommands(client, config.discordGuildId);
-    commandScope = result.scope;
-
-    log("discord.commands.registered", result);
-  } catch (error) {
-    log("discord.commands.failed", {
-      error: formatError(error),
-      scope: config.discordGuildId ? "guild" : "global"
-    });
-  }
-});
-
-client.on("messageCreate", async (message) => {
-  if (!message.inGuild()) {
-    return;
-  }
-
-  if (!canProcessMessageAuthor(message.author, config.allowedBotIds)) {
-    return;
-  }
-
-  if (message.author.bot && config.allowedBotIds.has(message.author.id)) {
-    log("discord.allowed_bot.message", {
-      attachmentCount: message.attachments.size,
-      authorId: message.author.id,
-      content: message.content,
-      mentionRoleIds: [...message.mentions.roles.keys()],
-      mentionUserIds: [...message.mentions.users.keys()],
-      messageId: message.id
-    });
-  }
-
-  if (!isMentionForBot(message)) {
-    return;
-  }
-
-  const normalizedContent = stripLeadingDiscordMentions(message.content);
-  const command = parseMentionCommand(normalizedContent, client.user.id);
-  const prompt = command.prompt;
-
-  if (!requirePrompt(prompt)) {
-    await replyWithoutPing(
-      message,
-      "Please include a prompt after `@codex`. Optional syntax: `@codex --model <name> your prompt`. Images are supported when attached to the same message."
-    );
-    return;
-  }
-
-  await acknowledgeRequest(message);
-
-  log("discord.mention.received", {
-    authorIsBot: message.author.bot,
-    attachmentCount: message.attachments.size,
-    messageId: message.id,
-    channelId: message.channelId,
-    hasAnyDiscordMention: hasAnyDiscordMention(message),
-    isThread: message.channel.isThread(),
-    mentionRoleIds: [...message.mentions.roles.keys()],
-    mentionUserIds: [...message.mentions.users.keys()],
-    promptLength: prompt.length,
-    requestedModel: command.model,
-    userId: message.author.id
-  });
-
-  try {
-    if (message.channel.isThread()) {
-      await handleThreadMention(message, command);
-      return;
+    if (providerId === "codex") {
+      record.codexThreadId = threadId;
     }
 
-    await handleNewChannelMention(message, command);
-  } catch (error) {
-    const failure = `Request failed: ${formatError(error)}`;
+    return record;
+  }
+
+  async function handleNewChannelMention(message, command) {
+    const { model, prompt } = command;
+    let thread;
+    let stopTyping = () => {};
+    let attachments = {
+      count: 0,
+      filePaths: [],
+      cleanup: async () => {}
+    };
 
     try {
-      await replyWithoutPing(message, failure);
-    } catch {
-      log("discord.reply.failed", {
-        messageId: message.id,
-        error: failure
-      });
-    }
-  }
-});
-
-client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand()) {
-    return;
-  }
-
-  try {
-    if (interaction.commandName === "help") {
-      await interaction.reply({
-        content: buildHelpMessage(),
-        ephemeral: true
-      });
-      return;
+      thread = message.hasThread && message.thread
+        ? message.thread
+        : await message.startThread({
+            name: buildThreadName(prompt, botName),
+            autoArchiveDuration: ThreadAutoArchiveDuration.OneDay,
+            reason: `${providerName} conversation started by ${message.author.tag}`
+          });
+    } catch (error) {
+      throw new Error(`Could not create a thread from this message: ${formatError(error)}`);
     }
 
-    if (interaction.commandName === "status") {
-      const codexStatus = await getLatestCodexStatus();
+    stopTyping = startTypingIndicator(thread);
+    activeThreads.add(thread.id);
 
-      await interaction.reply({
-        content: buildStatusMessage({
-          activeRequestCount: activeThreads.size,
-          codexStatus,
-          codexCwd: config.codexCwd,
-          commandScope,
-          startedAt,
-          stats: sessionStore.getStats(),
-          trackedThreadCount: sessionStore.countThreads()
+    log(`${providerId}.thread.created`, {
+      discordThreadId: thread.id,
+      starterMessageId: message.id,
+      userId: message.author.id
+    });
+
+    try {
+      attachments = await downloadImageAttachments(message);
+      const result = await providerClient.createTurn({
+        prompt,
+        model,
+        imagePaths: attachments.filePaths
+      });
+      const now = new Date().toISOString();
+
+      await sessionStore.upsert({
+        ...buildSessionRecord({
+          message,
+          model,
+          now,
+          threadId: result.threadId,
+          usage: result.usage
         }),
-        ephemeral: true
+        discordThreadId: thread.id
       });
+      await sessionStore.recordTurn({
+        discordThreadId: thread.id,
+        imageCount: attachments.count,
+        mode: "new",
+        requestedModel: model,
+        usage: result.usage,
+        userId: message.author.id
+      });
+
+      stopTyping();
+      await sendThreadSuccess(
+        thread,
+        message.author.id,
+        buildTurnStatusMessage({
+          imageCount: attachments.count,
+          mode: "new",
+          model,
+          providerName,
+          sessionId: result.threadId,
+          sessionIdLabel,
+          usage: result.usage
+        }),
+        result.responseText
+      );
+
+      log(`${providerId}.turn.created`, {
+        discordThreadId: thread.id,
+        providerThreadId: result.threadId,
+        requestedModel: model
+      });
+    } catch (error) {
+      stopTyping();
+      await sendThreadFailure(
+        thread,
+        message.author.id,
+        `${providerName} request failed: ${formatError(error)}`
+      );
+      log(`${providerId}.turn.failed`, {
+        discordThreadId: thread.id,
+        error: formatError(error)
+      });
+    } finally {
+      stopTyping();
+      await attachments.cleanup();
+      activeThreads.delete(thread.id);
+    }
+  }
+
+  async function handleThreadMention(message, command) {
+    const { model, prompt } = command;
+    const thread = message.channel;
+    const session = sessionStore.get(thread.id);
+    const providerThreadId = getSessionThreadId(session);
+    let stopTyping = () => {};
+    let attachments = {
+      count: 0,
+      filePaths: [],
+      cleanup: async () => {}
+    };
+
+    if (!session || !providerThreadId) {
+      await replyWithoutPing(message, `This thread is not connected to a ${providerName} session. Start from a normal channel with \`@${botName}\`.`);
       return;
     }
-  } catch (error) {
-    const content = `Command failed: ${formatError(error)}`;
 
-    if (interaction.replied || interaction.deferred) {
-      await interaction.followUp({
+    if (activeThreads.has(thread.id)) {
+      await replyWithoutPing(message, `A ${providerName} request is already running in this thread.`);
+      return;
+    }
+
+    stopTyping = startTypingIndicator(thread);
+    activeThreads.add(thread.id);
+
+    log(`${providerId}.thread.resuming`, {
+      discordThreadId: thread.id,
+      providerThreadId,
+      userId: message.author.id
+    });
+
+    try {
+      attachments = await downloadImageAttachments(message);
+      const result = await providerClient.resumeTurn({
+        threadId: providerThreadId,
+        imagePaths: attachments.filePaths,
+        prompt,
+        model
+      });
+
+      await sessionStore.upsert(
+        buildSessionRecord({
+          existingSession: session,
+          message,
+          model,
+          now: new Date().toISOString(),
+          threadId: result.threadId,
+          usage: result.usage
+        })
+      );
+      await sessionStore.recordTurn({
+        discordThreadId: thread.id,
+        imageCount: attachments.count,
+        mode: "resume",
+        requestedModel: model,
+        usage: result.usage,
+        userId: message.author.id
+      });
+
+      stopTyping();
+      await sendThreadSuccess(
+        thread,
+        message.author.id,
+        buildTurnStatusMessage({
+          imageCount: attachments.count,
+          mode: "resume",
+          model,
+          providerName,
+          sessionId: result.threadId,
+          sessionIdLabel,
+          usage: result.usage
+        }),
+        result.responseText
+      );
+
+      log(`${providerId}.turn.resumed`, {
+        discordThreadId: thread.id,
+        providerThreadId: result.threadId,
+        requestedModel: model
+      });
+    } catch (error) {
+      stopTyping();
+      await sendThreadFailure(
+        thread,
+        message.author.id,
+        `${providerName} resume failed: ${formatError(error)}`
+      );
+      log(`${providerId}.resume.failed`, {
+        discordThreadId: thread.id,
+        providerThreadId,
+        error: formatError(error)
+      });
+    } finally {
+      stopTyping();
+      await attachments.cleanup();
+      activeThreads.delete(thread.id);
+    }
+  }
+
+  client.once("clientReady", () => {
+    log(`${providerId}.discord.ready`, {
+      botUserId: client.user?.id,
+      botTag: client.user?.tag,
+      workdir
+    });
+  });
+
+  client.once("clientReady", async () => {
+    try {
+      const result = await registerSlashCommands(client, discordGuildId);
+      commandScope = result.scope;
+
+      log(`${providerId}.discord.commands.registered`, result);
+    } catch (error) {
+      log(`${providerId}.discord.commands.failed`, {
+        error: formatError(error),
+        scope: discordGuildId ? "guild" : "global"
+      });
+    }
+  });
+
+  client.on("messageCreate", async (message) => {
+    if (!message.inGuild()) {
+      return;
+    }
+
+    if (!canProcessMessageAuthor(message.author, allowedBotIds)) {
+      return;
+    }
+
+    if (message.author.bot && allowedBotIds.has(message.author.id)) {
+      log(`${providerId}.discord.allowed_bot.message`, {
+        attachmentCount: message.attachments.size,
+        authorId: message.author.id,
+        content: message.content,
+        mentionRoleIds: [...message.mentions.roles.keys()],
+        mentionUserIds: [...message.mentions.users.keys()],
+        messageId: message.id
+      });
+    }
+
+    if (!isMentionForBot(message)) {
+      return;
+    }
+
+    const normalizedContent = stripLeadingDiscordMentions(message.content);
+    const command = parseMentionCommand(normalizedContent, client.user.id);
+    const prompt = command.prompt;
+
+    if (!requirePrompt(prompt)) {
+      await replyWithoutPing(
+        message,
+        `Please include a prompt after \`@${botName}\`. Optional syntax: \`@${botName} --model <name> your prompt\`. Images are supported when attached to the same message.`
+      );
+      return;
+    }
+
+    await acknowledgeRequest(message);
+
+    log(`${providerId}.discord.mention.received`, {
+      authorIsBot: message.author.bot,
+      attachmentCount: message.attachments.size,
+      messageId: message.id,
+      channelId: message.channelId,
+      hasAnyDiscordMention: hasAnyDiscordMention(message),
+      isMentionForBot: isMentionForBot(message),
+      isThread: message.channel.isThread(),
+      mentionRoleIds: [...message.mentions.roles.keys()],
+      mentionUserIds: [...message.mentions.users.keys()],
+      promptLength: prompt.length,
+      requestedModel: command.model,
+      userId: message.author.id
+    });
+
+    try {
+      if (message.channel.isThread()) {
+        await handleThreadMention(message, command);
+        return;
+      }
+
+      await handleNewChannelMention(message, command);
+    } catch (error) {
+      const failure = `Request failed: ${formatError(error)}`;
+
+      try {
+        await replyWithoutPing(message, failure);
+      } catch {
+        log(`${providerId}.discord.reply.failed`, {
+          messageId: message.id,
+          error: failure
+        });
+      }
+    }
+  });
+
+  client.on("interactionCreate", async (interaction) => {
+    if (!interaction.isChatInputCommand()) {
+      return;
+    }
+
+    try {
+      if (interaction.commandName === "help") {
+        await interaction.reply({
+          content: buildHelpMessage({
+            botName,
+            providerName
+          }),
+          ephemeral: true
+        });
+        return;
+      }
+
+      if (interaction.commandName === "status") {
+        const providerStatus = statusFetcher ? await statusFetcher() : null;
+
+        await interaction.reply({
+          content: buildStatusMessage({
+            activeRequestCount: activeThreads.size,
+            botName,
+            codexStatus: providerStatus,
+            commandScope,
+            cwd: workdir,
+            providerName,
+            startedAt,
+            stats: sessionStore.getStats(),
+            trackedThreadCount: sessionStore.countThreads()
+          }),
+          ephemeral: true
+        });
+        return;
+      }
+    } catch (error) {
+      const content = `Command failed: ${formatError(error)}`;
+
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp({
+          content,
+          ephemeral: true
+        });
+        return;
+      }
+
+      await interaction.reply({
         content,
         ephemeral: true
       });
-      return;
     }
+  });
 
-    await interaction.reply({
-      content,
-      ephemeral: true
-    });
-  }
-});
+  await sessionStore.load();
+  await client.login(botToken);
+
+  return client;
+}
 
 process.on("unhandledRejection", (error) => {
   log("process.unhandledRejection", {
@@ -501,6 +555,3 @@ process.on("uncaughtException", (error) => {
     error: formatError(error)
   });
 });
-
-await sessionStore.load();
-await client.login(config.discordBotToken);

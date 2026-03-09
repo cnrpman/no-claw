@@ -29,6 +29,9 @@ test("buildThreadName prefixes and truncates", () => {
   const name = buildThreadName("hello world");
   assert.equal(name, "codex: hello world");
 
+  const claudeName = buildThreadName("hello world", "claude");
+  assert.equal(claudeName, "claude: hello world");
+
   const longName = buildThreadName("x".repeat(200));
   assert.equal(longName.length, 100);
 });
@@ -89,16 +92,20 @@ test("buildTurnStatusMessage explains new session behavior and usage", () => {
 test("buildTurnStatusMessage explains resumed session behavior", () => {
   const text = buildTurnStatusMessage({
     mode: "resume",
-    codexThreadId: "abc-123",
+    sessionId: "abc-123",
     imageCount: 0,
     model: "gpt-5",
+    providerName: "Claude",
+    sessionIdLabel: "claude session",
     usage: null
   });
 
-  assert.match(text, /resumed existing Codex session/);
-  assert.match(text, /discord context: current mention only; history via Codex session/);
+  assert.match(text, /\*\*Claude Status\*\*/);
+  assert.match(text, /resumed existing Claude session/);
+  assert.match(text, /discord context: current mention only; history via Claude session/);
   assert.match(text, /images: none/);
   assert.match(text, /model arg: `gpt-5`/);
+  assert.match(text, /claude session: `abc-123`/);
   assert.match(text, /usage: unavailable/);
 });
 

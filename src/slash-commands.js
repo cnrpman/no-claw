@@ -99,7 +99,7 @@ export const SLASH_COMMANDS = [
   },
   {
     name: "status",
-    description: "Show local bot status and tracked usage without calling Codex"
+    description: "Show local bot status and tracked usage without calling the CLI"
   }
 ];
 
@@ -126,35 +126,60 @@ export async function registerSlashCommands(client, discordGuildId) {
   };
 }
 
-export function buildHelpMessage() {
+function buildUnavailableAccountSection(providerSlug, providerName) {
   return [
-    "**discord-codex help**",
-    "`@codex your prompt`",
-    "`@codex --model gpt-5 your prompt`",
-    "attach image(s) + `@codex your prompt`",
-    "inside a bot-created thread, `@codex` continues the same Codex session",
+    `**${providerSlug} account**`,
+    "status: unavailable",
+    `source: local ${providerName} account status is not implemented`
+  ];
+}
+
+export function buildHelpMessage({
+  botName = "codex",
+  providerName = "Codex"
+} = {}) {
+  return [
+    `**discord-${botName} help**`,
+    `\`@${botName} your prompt\``,
+    `\`@${botName} --model gpt-5 your prompt\``,
+    `attach image(s) + \`@${botName} your prompt\``,
+    `inside a bot-created thread, \`@${botName}\` continues the same ${providerName} session`,
     "",
     "**slash commands**",
     "`/help` show this help",
     "`/status` show local bot status + tracked usage",
     "",
-    "slash commands do not call Codex and do not consume model tokens"
+    `slash commands do not call ${providerName} and do not consume model tokens`
   ].join("\n");
 }
 
 export function buildStatusMessage({
   activeRequestCount,
+  accountStatusLines = null,
+  botName = "codex",
   codexStatus,
-  codexCwd,
   commandScope,
+  cwd,
+  cwdLabel,
+  codexCwd,
+  providerName = "Codex",
   startedAt,
   stats,
   trackedThreadCount
 }) {
+  const effectiveBotName = botName;
+  const effectiveCwd = cwd ?? codexCwd;
+  const effectiveCwdLabel = cwdLabel ?? `${effectiveBotName} cwd`;
+  const effectiveAccountStatusLines = accountStatusLines ?? (
+    effectiveBotName === "codex"
+      ? buildCodexStatusSection(codexStatus)
+      : buildUnavailableAccountSection(effectiveBotName, providerName)
+  );
+
   return [
-    "**discord-codex status**",
+    `**discord-${effectiveBotName} status**`,
     "",
-    ...buildCodexStatusSection(codexStatus),
+    ...effectiveAccountStatusLines,
     "",
     "**bot**",
     "status: online",
@@ -165,8 +190,10 @@ export function buildStatusMessage({
     `completed turns: ${stats.completedTurns}`,
     `bot-tracked usage: in ${formatCount(stats.totalInputTokens)} | cached ${formatCount(stats.totalCachedInputTokens)} | out ${formatCount(stats.totalOutputTokens)}`,
     `bot last turn: ${formatLastTurn(stats)}`,
-    `codex cwd: \`${codexCwd}\``,
+    `${effectiveCwdLabel}: \`${effectiveCwd}\``,
     "",
-    "zero-token status assembled from local bot state and local Codex files"
+    effectiveBotName === "codex"
+      ? "zero-token status assembled from local bot state and local Codex files"
+      : `zero-token status assembled from local bot state; local ${providerName} account usage is not implemented`
   ].join("\n");
 }

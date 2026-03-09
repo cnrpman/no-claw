@@ -15,6 +15,18 @@ test("buildHelpMessage lists mention syntax and slash commands", () => {
   assert.match(text, /do not consume model tokens/);
 });
 
+test("buildHelpMessage can describe the Claude bot", () => {
+  const text = buildHelpMessage({
+    botName: "claude",
+    providerName: "Claude"
+  });
+
+  assert.match(text, /\*\*discord-claude help\*\*/);
+  assert.match(text, /@claude your prompt/);
+  assert.match(text, /continues the same Claude session/);
+  assert.match(text, /do not call Claude/);
+});
+
 test("buildStatusMessage summarizes local runtime state", () => {
   const text = buildStatusMessage({
     activeRequestCount: 2,
@@ -127,4 +139,35 @@ test("buildStatusMessage separates usage and limit snapshots when they come from
 
   assert.match(text, /usage snapshot: 2026-03-09T00:40:00.000Z/);
   assert.match(text, /limit snapshot: 2026-03-08T23:59:00.000Z/);
+});
+
+test("buildStatusMessage can describe Claude without local account usage", () => {
+  const text = buildStatusMessage({
+    activeRequestCount: 1,
+    botName: "claude",
+    commandScope: "global",
+    cwd: "/tmp/claude-workspace",
+    providerName: "Claude",
+    startedAt: new Date(Date.now() - 10_000),
+    stats: {
+      completedTurns: 1,
+      lastTurnAt: "2026-03-09T00:40:00.000Z",
+      lastTurnMode: "new",
+      lastTurnUsage: {
+        input_tokens: 10,
+        cached_input_tokens: null,
+        output_tokens: 5
+      },
+      totalInputTokens: 10,
+      totalCachedInputTokens: 0,
+      totalOutputTokens: 5
+    },
+    trackedThreadCount: 1
+  });
+
+  assert.match(text, /\*\*discord-claude status\*\*/);
+  assert.match(text, /\*\*claude account\*\*/);
+  assert.match(text, /status: unavailable/);
+  assert.match(text, /claude cwd: `\/tmp\/claude-workspace`/);
+  assert.match(text, /local Claude account usage is not implemented/);
 });

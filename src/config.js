@@ -18,32 +18,71 @@ function parseIdList(value) {
   );
 }
 
-function requireEnv(name) {
+function optionalEnv(name) {
   const value = process.env[name]?.trim();
-
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-
-  return value;
+  return value || null;
 }
 
-export function loadConfig() {
-  const discordBotToken = requireEnv("DISCORD_BOT_TOKEN");
-  const discordGuildId = process.env.DISCORD_GUILD_ID?.trim() || null;
-  const allowedBotIds = parseIdList(process.env.ALLOWED_BOT_IDS);
-  const codexBin = process.env.CODEX_BIN?.trim() || "codex";
-  const codexCwd = path.resolve(process.env.CODEX_CWD?.trim() || path.join(process.cwd(), "workspace"));
-  const sessionStorePath = path.resolve(process.cwd(), "data", "sessions.json");
+function createBotConfig({
+  discordBotToken,
+  kind,
+  binEnvName,
+  defaultBin,
+  cwdEnvName,
+  defaultCwd,
+  sessionStorePath
+}) {
+  if (!discordBotToken) {
+    return null;
+  }
 
-  fs.mkdirSync(codexCwd, { recursive: true });
+  const cwd = path.resolve(process.env[cwdEnvName]?.trim() || defaultCwd);
+
+  fs.mkdirSync(cwd, { recursive: true });
 
   return {
     discordBotToken,
+    kind,
+    sessionStorePath,
+    [`${kind}Bin`]: process.env[binEnvName]?.trim() || defaultBin,
+    [`${kind}Cwd`]: cwd
+  };
+}
+
+export function loadConfig() {
+  const discordGuildId = process.env.DISCORD_GUILD_ID?.trim() || null;
+  const allowedBotIds = parseIdList(process.env.ALLOWED_BOT_IDS);
+  const defaultWorkspace = path.join(process.cwd(), "workspace");
+  const bots = [
+    createBotConfig({
+      discordBotToken: optionalEnv("CODEX_DISCORD_BOT_TOKEN") || optionalEnv("DISCORD_BOT_TOKEN"),
+      kind: "codex",
+      binEnvName: "CODEX_BIN",
+      defaultBin: "codex",
+      cwdEnvName: "CODEX_CWD",
+      defaultCwd: defaultWorkspace,
+      sessionStorePath: path.resolve(process.cwd(), "data", "sessions.json")
+    }),
+    createBotConfig({
+      discordBotToken: optionalEnv("CLAUDE_DISCORD_BOT_TOKEN"),
+      kind: "claude",
+      binEnvName: "CLAUDE_BIN",
+      defaultBin: "claude",
+      cwdEnvName: "CLAUDE_CWD",
+      defaultCwd: defaultWorkspace,
+      sessionStorePath: path.resolve(process.cwd(), "data", "claude-sessions.json")
+    })
+  ].filter(Boolean);
+
+  if (bots.length === 0) {
+    throw new Error(
+      "Missing Discord bot token. Set CODEX_DISCORD_BOT_TOKEN and/or CLAUDE_DISCORD_BOT_TOKEN. DISCORD_BOT_TOKEN is still accepted as a Codex fallback."
+    );
+  }
+
+  return {
     discordGuildId,
     allowedBotIds,
-    codexBin,
-    codexCwd,
-    sessionStorePath
+    bots
   };
 }

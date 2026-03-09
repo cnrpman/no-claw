@@ -59,12 +59,23 @@ function formatCount(value) {
   return typeof value === "number" ? value.toLocaleString("en-US") : "?";
 }
 
-export function buildTurnStatusMessage({ mode, codexThreadId, imageCount = 0, model, usage }) {
+export function buildTurnStatusMessage({
+  imageCount = 0,
+  mode,
+  model,
+  providerName = "Codex",
+  sessionId,
+  sessionIdLabel,
+  usage,
+  codexThreadId
+}) {
+  const effectiveSessionId = sessionId ?? codexThreadId;
+  const effectiveSessionIdLabel = sessionIdLabel || `${providerName.toLowerCase()} session`;
   const imageLine = imageCount > 0 ? `${imageCount} attached` : "none";
-  const modeLine = mode === "resume" ? "resumed existing Codex session" : "started new Codex session";
+  const modeLine = mode === "resume" ? `resumed existing ${providerName} session` : `started new ${providerName} session`;
   const contextLine =
     mode === "resume"
-      ? "current mention only; history via Codex session"
+      ? `current mention only; history via ${providerName} session`
       : "current mention only";
   const modelLine = model ? `\`${model}\`` : "default (no `-m` passed)";
   const usageLine = usage
@@ -72,24 +83,24 @@ export function buildTurnStatusMessage({ mode, codexThreadId, imageCount = 0, mo
     : "unavailable";
 
   return [
-    "**Codex Status**",
+    `**${providerName} Status**`,
     `mode: ${modeLine}`,
     `discord context: ${contextLine}`,
     `images: ${imageLine}`,
     `model arg: ${modelLine}`,
-    `codex thread: \`${codexThreadId}\``,
+    `${effectiveSessionIdLabel}: \`${effectiveSessionId}\``,
     `usage: ${usageLine}`
   ].join("\n");
 }
 
-export function buildThreadName(prompt) {
+export function buildThreadName(prompt, prefix = "codex") {
   const normalized = prompt.replace(/\s+/g, " ").trim();
 
   if (!normalized) {
-    return "codex";
+    return prefix;
   }
 
-  return `codex: ${normalized}`.slice(0, 100);
+  return `${prefix}: ${normalized}`.slice(0, 100);
 }
 
 export function splitDiscordMessage(text, limit = DISCORD_MESSAGE_LIMIT) {

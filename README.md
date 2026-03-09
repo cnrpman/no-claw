@@ -99,6 +99,7 @@ If no model is specified, the bot does not pass `-m` to the CLI, so Codex uses i
 - Session state is stored locally in `data/sessions.json`.
 - The default Codex working directory is `./workspace`, and the bot creates it automatically if it does not exist.
 - Before each answer, the bot posts a short status block in the thread showing whether it started or resumed a Codex session, what Discord context was sent, how many images were attached, what `--model` arg was used, and the per-turn usage reported by `codex --json`.
+- When the Codex CLI fails, the bot now prefers the most useful surfaced CLI error text (for example account usage-limit errors) instead of only echoing an internal wrapper warning.
 - On macOS, if no explicit proxy env vars are set, the bot auto-detects the current system proxy and applies it to Discord REST, the Discord gateway connection, attachment downloads, and inherited child-process env vars. SOCKS-only system proxy setups may still need explicit `HTTP_PROXY` / `HTTPS_PROXY` env vars for Discord traffic.
 
 If you later want to use a custom server emoji instead of a Unicode emoji, also grant `Use External Emojis` when needed.

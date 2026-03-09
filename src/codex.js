@@ -4,6 +4,97 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+function parseJsonLine(line) {
+  try {
+    return JSON.parse(line);
+  } catch {
+    return null;
+  }
+}
+
+function isCodexCliNoise(line) {
+  return /^(?:-+|OpenAI Codex v|workdir:|model:|provider:|approval:|sandbox:|reasoning effort:|reasoning summaries:|session id:|user|mcp startup:)/i.test(line);
+}
+
+function collectEventErrorCandidates(event) {
+  if (!event || typeof event !== "object") {
+    return [];
+  }
+
+  const candidates = [];
+  const maybePush = (value) => {
+    if (typeof value === "string" && value.trim()) {
+      candidates.push(value.trim());
+    }
+  };
+
+  maybePush(event.message);
+  maybePush(event.detail);
+  maybePush(event.error);
+  maybePush(event.error?.message);
+  maybePush(event.details);
+  maybePush(event.details?.message);
+  maybePush(event.payload?.message);
+  maybePush(event.payload?.error);
+  maybePush(event.payload?.error?.message);
+
+  return candidates;
+}
+
+function classifyFailureCandidate(message) {
+  if (/^warning:/i.test(message)) {
+    return "warning";
+  }
+
+  if (/^(?:error:|fatal:)/i.test(message) || /usage limit|rate limit|try again at|request failed|permission denied|unauthorized/i.test(message)) {
+    return "error";
+  }
+
+  return "info";
+}
+
+export function extractCodexFailureDetails({ stderr, stdoutLines, outputText = "" }) {
+  const buckets = {
+    error: [],
+    info: [],
+    warning: []
+  };
+  const seen = new Set();
+
+  const addCandidate = (value) => {
+    const message = String(value || "").trim();
+
+    if (!message || seen.has(message) || isCodexCliNoise(message)) {
+      return;
+    }
+
+    seen.add(message);
+    buckets[classifyFailureCandidate(message)].push(message);
+  };
+
+  for (const line of stdoutLines) {
+    const event = parseJsonLine(line);
+
+    if (event) {
+      for (const candidate of collectEventErrorCandidates(event)) {
+        addCandidate(candidate);
+      }
+
+      continue;
+    }
+
+    addCandidate(line);
+  }
+
+  for (const line of String(stderr || "").split(/\r?\n/)) {
+    addCandidate(line);
+  }
+
+  addCandidate(outputText);
+
+  return buckets.error.at(-1) || buckets.info.at(-1) || buckets.warning.at(-1) || "Unknown Codex failure";
+}
+
 export function buildCodexCommandArgs({
   args,
   imagePaths = [],
@@ -135,7 +226,11 @@ export class CodexClient {
     }
 
     if (result.code !== 0) {
-      const details = result.stderr.trim() || "Unknown Codex failure";
+      const details = extractCodexFailureDetails({
+        stderr: result.stderr,
+        stdoutLines: result.stdoutLines,
+        outputText
+      });
       throw new Error(`Codex exited with code ${result.code}: ${details}`);
     }
 

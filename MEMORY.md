@@ -13,3 +13,6 @@
 - `codex exec --json` failures do not always put the real user-facing error on stderr; sometimes stderr only has an internal warning while the actionable error is printed on stdout, so wrappers should inspect both.
 - Claude Code CLI stream-json integrations should keep a line buffer across stdout chunks and inspect both structured result events and stderr, because session ids, final text, and surfaced errors may arrive in different events.
 - Claude Code `--output-format stream-json` in `--print` mode also requires `--verbose`; without it, the CLI can fail before the actual model/backend error is reached.
+- Claude stores per-project local session logs under `~/.claude/projects/<absolute-path-with-slashes-replaced-by-dashes>/`, and assistant events there can include both usage metadata and human-readable limit text such as `You've hit your limit ...`.
+- Claude interactive slash commands can be scripted over stdin; for example, `printf '/usage\n/exit\n' | claude` returns the same human-readable usage/limit text shown in the interactive CLI.
+- If real behavior or the correct data source is still uncertain after a few probes, stop self-looping, ask the human for help/context, and avoid speculative production-code changes first.

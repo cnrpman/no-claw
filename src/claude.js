@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import path from "node:path";
 
 function parseJsonLine(line) {
   try {
@@ -81,6 +82,11 @@ export function buildClaudeCommandArgs({
     args.push("--resume", sessionId);
   }
 
+  if (imagePaths.length > 0) {
+    const imageDir = path.dirname(imagePaths[0]);
+    args.push("--add-dir", imageDir);
+  }
+
   let effectivePrompt = prompt;
 
   if (imagePaths.length > 0) {
@@ -88,7 +94,7 @@ export function buildClaudeCommandArgs({
     effectivePrompt = `${refs}\n\n${prompt}`;
   }
 
-  args.push(effectivePrompt);
+  args.push("--", effectivePrompt);
 
   return args;
 }

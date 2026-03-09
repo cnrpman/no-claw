@@ -23,13 +23,14 @@ test("buildClaudeCommandArgs adds model and resume session id", () => {
     "sonnet",
     "--resume",
     "session-123",
+    "--",
     "explain this"
   ]);
 });
 
-test("buildClaudeCommandArgs prefixes image references into the prompt", () => {
+test("buildClaudeCommandArgs adds --add-dir and prefixes image references into the prompt", () => {
   const args = buildClaudeCommandArgs({
-    imagePaths: ["/tmp/a.png", "/tmp/b.png"],
+    imagePaths: ["/tmp/imgs/a.png", "/tmp/imgs/b.png"],
     prompt: "what is in these images?"
   });
 
@@ -38,7 +39,10 @@ test("buildClaudeCommandArgs prefixes image references into the prompt", () => {
     "--output-format",
     "stream-json",
     "--print",
-    "[Attached image: /tmp/a.png]\n[Attached image: /tmp/b.png]\n\nwhat is in these images?"
+    "--add-dir",
+    "/tmp/imgs",
+    "--",
+    "[Attached image: /tmp/imgs/a.png]\n[Attached image: /tmp/imgs/b.png]\n\nwhat is in these images?"
   ]);
 });
 

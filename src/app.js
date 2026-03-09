@@ -1,6 +1,7 @@
 import {
   Client,
   GatewayIntentBits,
+  MessageFlags,
   ThreadAutoArchiveDuration
 } from "discord.js";
 
@@ -9,6 +10,7 @@ import { SessionStore } from "./session-store.js";
 import {
   buildHelpMessage,
   buildStatusMessage,
+  getSlashCommands,
   registerSlashCommands
 } from "./slash-commands.js";
 import {
@@ -396,9 +398,11 @@ export async function startBot({
     });
   });
 
+  const slashCommands = getSlashCommands({ includeStatus: !!statusFetcher });
+
   client.once("clientReady", async () => {
     try {
-      const result = await registerSlashCommands(client, discordGuildId);
+      const result = await registerSlashCommands(client, discordGuildId, slashCommands);
       commandScope = result.scope;
 
       log(`${providerId}.discord.commands.registered`, result);
@@ -494,46 +498,47 @@ export async function startBot({
         await interaction.reply({
           content: buildHelpMessage({
             botName,
+            includeStatus: !!statusFetcher,
             providerName
           }),
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         });
         return;
       }
 
-      if (interaction.commandName === "status") {
-        const providerStatus = statusFetcher ? await statusFetcher() : null;
+      if (interaction.commandName === "status" && statusFetcher) {
+        await interaction.deferReply({
+          flags: MessageFlags.Ephemeral
+        });
 
-        await interaction.reply({
-          content: buildStatusMessage({
-            activeRequestCount: activeThreads.size,
-            botName,
-            codexStatus: providerStatus,
-            commandScope,
-            cwd: workdir,
-            providerName,
-            startedAt,
-            stats: sessionStore.getStats(),
-            trackedThreadCount: sessionStore.countThreads()
-          }),
-          ephemeral: true
+        const codexStatus = await statusFetcher();
+
+        await interaction.editReply({
+          content: buildStatusMessage({ codexStatus })
         });
         return;
       }
     } catch (error) {
       const content = `Command failed: ${formatError(error)}`;
 
+      if (interaction.deferred && !interaction.replied) {
+        await interaction.editReply({
+          content
+        });
+        return;
+      }
+
       if (interaction.replied || interaction.deferred) {
         await interaction.followUp({
           content,
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         });
         return;
       }
 
       await interaction.reply({
         content,
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
   });

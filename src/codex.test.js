@@ -16,7 +16,11 @@ test("buildCodexCommandArgs terminates options before a create prompt with image
   });
 
   assert.deepEqual(args, [
+    "--ask-for-approval",
+    "never",
     "exec",
+    "--sandbox",
+    "danger-full-access",
     "--skip-git-repo-check",
     "--json",
     "-o",
@@ -43,7 +47,11 @@ test("buildCodexCommandArgs terminates options before resume session id and prom
   });
 
   assert.deepEqual(args, [
+    "--ask-for-approval",
+    "never",
     "exec",
+    "--sandbox",
+    "danger-full-access",
     "resume",
     "--skip-git-repo-check",
     "--json",
@@ -65,6 +73,8 @@ test("extractCodexFailureDetails prefers a useful stdout error over stderr warni
       "--------",
       "workdir: /Users/jun/git/discord-codex",
       "session id: 019cd13a-249f-78e3-b379-8489fa9dfcdf",
+      "approval: never",
+      "sandbox: danger-full-access",
       "user",
       "hello",
       "mcp startup: no servers",

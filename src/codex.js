@@ -103,7 +103,18 @@ export function buildCodexCommandArgs({
   prompt,
   threadId = null
 }) {
-  const commandArgs = [...args, "--skip-git-repo-check", "--json", "-o", outputFile];
+  const commandArgs = [
+    "--ask-for-approval",
+    "never",
+    args[0],
+    "--sandbox",
+    "danger-full-access",
+    ...args.slice(1),
+    "--skip-git-repo-check",
+    "--json",
+    "-o",
+    outputFile
+  ];
 
   if (model) {
     commandArgs.push("-m", model);

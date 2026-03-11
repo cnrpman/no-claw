@@ -16,3 +16,7 @@
 - Claude stores per-project local session logs under `~/.claude/projects/<absolute-path-with-slashes-replaced-by-dashes>/`, and assistant events there can include both usage metadata and human-readable limit text such as `You've hit your limit ...`.
 - Claude interactive slash commands can be scripted over stdin; for example, `printf '/usage\n/exit\n' | claude` returns the same human-readable usage/limit text shown in the interactive CLI.
 - If real behavior or the correct data source is still uncertain after a few probes, stop self-looping, ask the human for help/context, and avoid speculative production-code changes first.
+
+## 2026-03-11
+
+- `codex` CLI marks `--ask-for-approval on-failure` as deprecated; for non-interactive `codex exec` wrappers, prefer `--ask-for-approval never` and pair it with an explicit sandbox mode instead of relying on older approval behavior.

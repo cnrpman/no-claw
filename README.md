@@ -125,6 +125,7 @@ If no model is specified, the bot does not pass a model flag, so the underlying 
 - Session state is stored locally in `data/sessions.json` for Codex and `data/claude-sessions.json` for Claude.
 - The default working directory is `./workspace`, shared by both backends, and is created automatically if it does not exist.
 - Before each answer, the bot posts a short status block in the thread showing whether it started or resumed a backend session, what Discord context was sent, how many images were attached, what model arg was used, and any per-turn usage reported by the CLI.
+- The Codex bot invokes `codex exec` with `--ask-for-approval never --sandbox danger-full-access`, so Codex child sessions run non-interactively with full local shell access.
 - When the Codex CLI fails, the bot prefers the most useful surfaced CLI error text (for example account usage-limit errors) instead of only echoing an internal wrapper warning.
 - On macOS, if no explicit proxy env vars are set, the bot auto-detects the current system proxy and applies it to Discord REST, the Discord gateway connection, attachment downloads, and inherited child-process env vars. SOCKS-only system proxy setups may still need explicit `HTTP_PROXY` / `HTTPS_PROXY` env vars for Discord traffic.
 

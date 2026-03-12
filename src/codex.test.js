@@ -71,7 +71,7 @@ test("extractCodexFailureDetails prefers a useful stdout error over stderr warni
     stdoutLines: [
       "OpenAI Codex v0.111.0 (research preview)",
       "--------",
-      "workdir: /Users/jun/git/discord-codex",
+      "workdir: /Users/jun/git/no-claw",
       "session id: 019cd13a-249f-78e3-b379-8489fa9dfcdf",
       "approval: never",
       "sandbox: danger-full-access",

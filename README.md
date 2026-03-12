@@ -1,8 +1,18 @@
-# discord-codex
+# no-claw
 
-Minimal Discord bot bridge for local CLI agents.
+Codex and Claude Code are already better, more professional agents. They are the superset. Rebuilding a second-tier agent stack on top of them is not leverage.
 
-It can run:
+That is why `no-claw` focuses on the missing layer instead of reimplementing the whole agent: IM communication.
+
+The job is straightforward:
+
+- deploy on a remote server
+- connect an IM surface such as Discord
+- let users operate those professional tools remotely, through chat, without pretending we invented a better agent
+
+So the name means: we only need Codex or Claude (or any agent with on-par capability) to do anything.
+
+No-claw can run:
 
 - a Codex bot that proxies `@codex` mentions into the local `codex` CLI
 - a Claude bot that proxies `@claude` mentions into the local Claude Code CLI

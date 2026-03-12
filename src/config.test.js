@@ -3,28 +3,32 @@ import assert from "node:assert/strict";
 
 import { loadConfig } from "./config.js";
 
-function withEnv(env, fn) {
-  const previous = {
-    ALLOWED_BOT_IDS: process.env.ALLOWED_BOT_IDS,
-    CLAUDE_BIN: process.env.CLAUDE_BIN,
-    CLAUDE_CWD: process.env.CLAUDE_CWD,
-    CLAUDE_DISCORD_BOT_TOKEN: process.env.CLAUDE_DISCORD_BOT_TOKEN,
-    CLAUDE_FEISHU_APP_ID: process.env.CLAUDE_FEISHU_APP_ID,
-    CLAUDE_FEISHU_APP_SECRET: process.env.CLAUDE_FEISHU_APP_SECRET,
-    CODEX_BIN: process.env.CODEX_BIN,
-    CODEX_CWD: process.env.CODEX_CWD,
-    CODEX_DISCORD_BOT_TOKEN: process.env.CODEX_DISCORD_BOT_TOKEN,
-    CODEX_FEISHU_APP_ID: process.env.CODEX_FEISHU_APP_ID,
-    CODEX_FEISHU_APP_SECRET: process.env.CODEX_FEISHU_APP_SECRET,
-    DISCORD_BOT_TOKEN: process.env.DISCORD_BOT_TOKEN,
-    DISCORD_GUILD_ID: process.env.DISCORD_GUILD_ID
-  };
+const MANAGED_ENV_KEYS = [
+  "ALLOWED_BOT_IDS",
+  "CLAUDE_BIN",
+  "CLAUDE_CWD",
+  "CLAUDE_DISCORD_BOT_TOKEN",
+  "CLAUDE_FEISHU_APP_ID",
+  "CLAUDE_FEISHU_APP_SECRET",
+  "CODEX_BIN",
+  "CODEX_CWD",
+  "CODEX_DISCORD_BOT_TOKEN",
+  "CODEX_FEISHU_APP_ID",
+  "CODEX_FEISHU_APP_SECRET",
+  "DISCORD_BOT_TOKEN",
+  "DISCORD_GUILD_ID"
+];
 
-  for (const [key, value] of Object.entries(env)) {
-    if (value == null) {
+function withEnv(env, fn) {
+  const previous = Object.fromEntries(
+    MANAGED_ENV_KEYS.map((key) => [key, process.env[key]])
+  );
+
+  for (const key of MANAGED_ENV_KEYS) {
+    if (!(key in env) || env[key] == null) {
       delete process.env[key];
     } else {
-      process.env[key] = value;
+      process.env[key] = env[key];
     }
   }
 

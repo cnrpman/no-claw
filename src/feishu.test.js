@@ -2,11 +2,25 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  buildFeishuAckReactionPayload,
   buildFeishuSessionKey,
   parseFeishuTextContent,
   shouldHandleFeishuMessage,
   stripFeishuMentionPlaceholders
 } from "./feishu.js";
+
+test("buildFeishuAckReactionPayload targets the message with the default ack reaction", () => {
+  assert.deepEqual(buildFeishuAckReactionPayload("om_message_1"), {
+    data: {
+      reaction_type: {
+        emoji_type: "GLANCE"
+      }
+    },
+    path: {
+      message_id: "om_message_1"
+    }
+  });
+});
 
 test("parseFeishuTextContent extracts text from Feishu message content", () => {
   assert.equal(parseFeishuTextContent(JSON.stringify({ text: "hello world" })), "hello world");

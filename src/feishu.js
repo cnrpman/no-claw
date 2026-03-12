@@ -15,6 +15,7 @@ import {
 
 const FEISHU_MESSAGE_LIMIT = 2000;
 const EVENT_CACHE_TTL_MS = 10 * 60 * 1000;
+const FEISHU_ACK_REACTION_TYPE = "GLANCE";
 
 function log(message, details = {}) {
   const payload = Object.keys(details).length > 0 ? ` ${JSON.stringify(details)}` : "";
@@ -23,6 +24,20 @@ function log(message, details = {}) {
 
 function createTextContent(text) {
   return JSON.stringify({ text });
+}
+
+export function buildFeishuAckReactionPayload(messageId) {
+  return {
+    data: {
+      reaction_type: {
+        // Feishu does not expose a Discord-style eyes reaction, so use the closest built-in glance emoji.
+        emoji_type: FEISHU_ACK_REACTION_TYPE
+      }
+    },
+    path: {
+      message_id: messageId
+    }
+  };
 }
 
 function rememberEvent(cache, eventId) {
@@ -132,6 +147,24 @@ async function sendFeishuTextReply({
   }
 }
 
+async function acknowledgeFeishuRequest({
+  chatId,
+  client,
+  messageId,
+  providerId
+}) {
+  try {
+    await client.im.v1.messageReaction.create(buildFeishuAckReactionPayload(messageId));
+  } catch (error) {
+    log(`${providerId}.feishu.react.failed`, {
+      chatId,
+      error: formatError(error),
+      messageId,
+      reactionType: FEISHU_ACK_REACTION_TYPE
+    });
+  }
+}
+
 export async function startFeishuBot({
   appId,
   appSecret,
@@ -206,6 +239,13 @@ export async function startFeishuBot({
       });
       return;
     }
+
+    await acknowledgeFeishuRequest({
+      chatId: message.chat_id,
+      client,
+      messageId: message.message_id,
+      providerId
+    });
 
     try {
       const result = await orchestrator.runTurn({

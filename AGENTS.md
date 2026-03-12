@@ -195,6 +195,7 @@ Hard constraint:
 * Do not edit past-date log files unless the user explicitly asks for a correction.
     * Treat `agent_log` updates as part of the “definition of done,” not an optional afterthought.
 * To help future code base readers run, update README.md about how to run / test / bundle the project (if applicable) whenever you make changes that affect those aspects.
+* Treat setup docs, runbooks, and other user/operator-facing instructions as part of the system contract. If a change alters what a human must know, configure, grant, verify, or expect, update that contract in the same change instead of letting runtime errors or follow-up debugging reveal it later.
 * When learn some new knowledge that is not specific to the current project but can be useful for future projects, please write it down in MEMORY.md
 
 * Use Codex for code, VSCode / Github Copilot for code review. Keep athlete and judge roles separate.

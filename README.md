@@ -53,6 +53,10 @@ This MVP intentionally does **not** read full channel history, compact old conte
   - Message Content Intent
 - Feishu bot setup for each enabled Feishu binding:
   - enable bot ability
+    - im:message.group_at_msg:readonly
+    - im:message.group_msg
+    - im:message.p2p_msg:readonly
+    - im:message:send_as_bot
   - subscribe to `im.message.receive_v1`
   - use the official long-connection mode supported by the Feishu SDK
   - if you want group-thread continuation without re-mentioning the bot every turn, give the app the group-message permission needed to receive those follow-up events

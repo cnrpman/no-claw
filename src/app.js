@@ -6,7 +6,6 @@ import {
 } from "discord.js";
 
 import { downloadImageAttachments } from "./attachments.js";
-import { SessionStore } from "./session-store.js";
 import {
   buildHelpMessage,
   buildStatusMessage,
@@ -22,6 +21,10 @@ import {
   stripLeadingDiscordMentions,
   splitDiscordMessageWithPrefix
 } from "./utils.js";
+import {
+  SessionNotFoundError,
+  TurnBusyError
+} from "./turn-orchestrator.js";
 
 function log(message, details = {}) {
   const payload = Object.keys(details).length > 0 ? ` ${JSON.stringify(details)}` : "";
@@ -137,22 +140,18 @@ function hasAnyDiscordMention(message) {
   );
 }
 
-export async function startBot({
+export async function startDiscordBot({
   allowedBotIds,
   botName,
   botToken,
-  client: providerClient,
   discordGuildId,
+  orchestrator,
   providerId,
   providerName,
   sessionIdLabel,
-  sessionStorePath,
   statusFetcher = null,
   workdir
 }) {
-  const sessionStore = new SessionStore(sessionStorePath);
-  const activeThreads = new Set();
-  const startedAt = new Date();
   let commandScope = discordGuildId ? "guild" : "global";
 
   const client = new Client({
@@ -165,32 +164,6 @@ export async function startBot({
 
   function isMentionForBot(message) {
     return Boolean(client.user && message.mentions.users.has(client.user.id));
-  }
-
-  function getSessionThreadId(session) {
-    return session?.providerThreadId ?? session?.codexThreadId ?? null;
-  }
-
-  function buildSessionRecord({ existingSession = null, message, model, now, threadId, usage }) {
-    const record = {
-      ...(existingSession || {}),
-      createdAt: existingSession?.createdAt ?? now,
-      createdByUserId: existingSession?.createdByUserId ?? message.author.id,
-      discordParentChannelId: existingSession?.discordParentChannelId ?? message.channelId,
-      discordThreadId: message.channel.isThread() ? message.channel.id : null,
-      lastActivityAt: now,
-      lastRequestedModel: model,
-      lastUsage: usage,
-      providerId,
-      providerThreadId: threadId,
-      starterMessageId: existingSession?.starterMessageId ?? message.id
-    };
-
-    if (providerId === "codex") {
-      record.codexThreadId = threadId;
-    }
-
-    return record;
   }
 
   async function handleNewChannelMention(message, command) {
@@ -216,7 +189,6 @@ export async function startBot({
     }
 
     stopTyping = startTypingIndicator(thread);
-    activeThreads.add(thread.id);
 
     log(`${providerId}.thread.created`, {
       discordThreadId: thread.id,
@@ -226,29 +198,16 @@ export async function startBot({
 
     try {
       attachments = await downloadImageAttachments(message);
-      const result = await providerClient.createTurn({
-        prompt,
-        model,
-        imagePaths: attachments.filePaths
-      });
-      const now = new Date().toISOString();
-
-      await sessionStore.upsert({
-        ...buildSessionRecord({
-          message,
-          model,
-          now,
-          threadId: result.threadId,
-          usage: result.usage
-        }),
-        discordThreadId: thread.id
-      });
-      await sessionStore.recordTurn({
-        discordThreadId: thread.id,
-        imageCount: attachments.count,
+      const result = await orchestrator.runTurn({
+        imagePaths: attachments.filePaths,
         mode: "new",
-        requestedModel: model,
-        usage: result.usage,
+        model,
+        platformConversationId: thread.id,
+        platformId: "discord",
+        platformMessageId: message.id,
+        platformParentId: message.channelId,
+        prompt,
+        sessionKey: thread.id,
         userId: message.author.id
       });
 
@@ -257,11 +216,13 @@ export async function startBot({
         thread,
         message.author.id,
         buildTurnStatusMessage({
+          contextLabel: "discord context",
+          contextValue: "current mention only",
           imageCount: attachments.count,
-          mode: "new",
+          mode: result.mode,
           model,
           providerName,
-          sessionId: result.threadId,
+          sessionId: result.sessionId,
           sessionIdLabel,
           usage: result.usage
         }),
@@ -270,7 +231,7 @@ export async function startBot({
 
       log(`${providerId}.turn.created`, {
         discordThreadId: thread.id,
-        providerThreadId: result.threadId,
+        providerSessionId: result.sessionId,
         requestedModel: model
       });
     } catch (error) {
@@ -287,15 +248,12 @@ export async function startBot({
     } finally {
       stopTyping();
       await attachments.cleanup();
-      activeThreads.delete(thread.id);
     }
   }
 
   async function handleThreadMention(message, command) {
     const { model, prompt } = command;
     const thread = message.channel;
-    const session = sessionStore.get(thread.id);
-    const providerThreadId = getSessionThreadId(session);
     let stopTyping = () => {};
     let attachments = {
       count: 0,
@@ -303,50 +261,36 @@ export async function startBot({
       cleanup: async () => {}
     };
 
-    if (!session || !providerThreadId) {
+    if (!orchestrator.hasSession(thread.id)) {
       await replyWithoutPing(message, `This thread is not connected to a ${providerName} session. Start from a normal channel with \`@${botName}\`.`);
       return;
     }
 
-    if (activeThreads.has(thread.id)) {
+    if (orchestrator.isBusy(thread.id)) {
       await replyWithoutPing(message, `A ${providerName} request is already running in this thread.`);
       return;
     }
 
     stopTyping = startTypingIndicator(thread);
-    activeThreads.add(thread.id);
 
     log(`${providerId}.thread.resuming`, {
+      conversationKey: thread.id,
       discordThreadId: thread.id,
-      providerThreadId,
       userId: message.author.id
     });
 
     try {
       attachments = await downloadImageAttachments(message);
-      const result = await providerClient.resumeTurn({
-        threadId: providerThreadId,
+      const result = await orchestrator.runTurn({
         imagePaths: attachments.filePaths,
-        prompt,
-        model
-      });
-
-      await sessionStore.upsert(
-        buildSessionRecord({
-          existingSession: session,
-          message,
-          model,
-          now: new Date().toISOString(),
-          threadId: result.threadId,
-          usage: result.usage
-        })
-      );
-      await sessionStore.recordTurn({
-        discordThreadId: thread.id,
-        imageCount: attachments.count,
         mode: "resume",
-        requestedModel: model,
-        usage: result.usage,
+        model,
+        platformConversationId: thread.id,
+        platformId: "discord",
+        platformMessageId: message.id,
+        platformParentId: message.channelId,
+        prompt,
+        sessionKey: thread.id,
         userId: message.author.id
       });
 
@@ -355,11 +299,13 @@ export async function startBot({
         thread,
         message.author.id,
         buildTurnStatusMessage({
+          contextLabel: "discord context",
+          contextValue: `current mention only; history via ${providerName} session`,
           imageCount: attachments.count,
-          mode: "resume",
+          mode: result.mode,
           model,
           providerName,
-          sessionId: result.threadId,
+          sessionId: result.sessionId,
           sessionIdLabel,
           usage: result.usage
         }),
@@ -368,10 +314,20 @@ export async function startBot({
 
       log(`${providerId}.turn.resumed`, {
         discordThreadId: thread.id,
-        providerThreadId: result.threadId,
+        providerSessionId: result.sessionId,
         requestedModel: model
       });
     } catch (error) {
+      if (error instanceof SessionNotFoundError) {
+        await replyWithoutPing(message, `This thread is not connected to a ${providerName} session. Start from a normal channel with \`@${botName}\`.`);
+        return;
+      }
+
+      if (error instanceof TurnBusyError) {
+        await replyWithoutPing(message, `A ${providerName} request is already running in this thread.`);
+        return;
+      }
+
       stopTyping();
       await sendThreadFailure(
         thread,
@@ -380,13 +336,11 @@ export async function startBot({
       );
       log(`${providerId}.resume.failed`, {
         discordThreadId: thread.id,
-        providerThreadId,
         error: formatError(error)
       });
     } finally {
       stopTyping();
       await attachments.cleanup();
-      activeThreads.delete(thread.id);
     }
   }
 
@@ -543,7 +497,6 @@ export async function startBot({
     }
   });
 
-  await sessionStore.load();
   await client.login(botToken);
 
   return client;

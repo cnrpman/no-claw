@@ -2,11 +2,14 @@ import {
   applySystemProxy,
   installDiscordGlobalWebSocketPatch
 } from "./system-proxy.js";
-import { startBot } from "./app.js";
+import { startDiscordBot } from "./app.js";
 import { ClaudeClient } from "./claude.js";
 import { getLatestCodexStatus } from "./codex-status.js";
 import { loadConfig } from "./config.js";
 import { CodexClient } from "./codex.js";
+import { startFeishuBot } from "./feishu.js";
+import { SessionStore } from "./session-store.js";
+import { TurnOrchestrator } from "./turn-orchestrator.js";
 
 function log(message, details = {}) {
   const payload = Object.keys(details).length > 0 ? ` ${JSON.stringify(details)}` : "";
@@ -24,41 +27,84 @@ if (proxyState.enabled) {
 
 const config = loadConfig();
 
-const botPromises = config.bots.map((botConfig) => {
-  if (botConfig.kind === "codex") {
-    return startBot({
-      allowedBotIds: config.allowedBotIds,
-      botName: "codex",
-      botToken: botConfig.discordBotToken,
-      client: new CodexClient({
-        codexBin: botConfig.codexBin,
-        codexCwd: botConfig.codexCwd
-      }),
-      discordGuildId: config.discordGuildId,
-      providerId: "codex",
-      providerName: "Codex",
-      sessionIdLabel: "codex thread",
-      sessionStorePath: botConfig.sessionStorePath,
-      statusFetcher: getLatestCodexStatus,
-      workdir: botConfig.codexCwd
+function createProviderClient(providerConfig) {
+  if (providerConfig.kind === "codex") {
+    return new CodexClient({
+      codexBin: providerConfig.codexBin,
+      codexCwd: providerConfig.codexCwd
     });
   }
 
-  return startBot({
-    allowedBotIds: config.allowedBotIds,
-    botName: "claude",
-    botToken: botConfig.discordBotToken,
-    client: new ClaudeClient({
-      claudeBin: botConfig.claudeBin,
-      claudeCwd: botConfig.claudeCwd
-    }),
-    discordGuildId: config.discordGuildId,
-    providerId: "claude",
-    providerName: "Claude",
-    sessionIdLabel: "claude session",
-    sessionStorePath: botConfig.sessionStorePath,
-    workdir: botConfig.claudeCwd
+  return new ClaudeClient({
+    claudeBin: providerConfig.claudeBin,
+    claudeCwd: providerConfig.claudeCwd
   });
+}
+
+function getProviderWorkdir(providerConfig) {
+  return providerConfig[`${providerConfig.kind}Cwd`];
+}
+
+const providerEntries = await Promise.all(
+  config.providers.map(async (providerConfig) => {
+    const sessionStore = new SessionStore(providerConfig.sessionStorePath);
+    const providerClient = createProviderClient(providerConfig);
+    await sessionStore.load();
+
+    return [
+      providerConfig.id,
+      {
+        ...providerConfig,
+        client: providerClient,
+        orchestrator: new TurnOrchestrator({
+          providerClient,
+          providerId: providerConfig.id,
+          sessionStore
+        }),
+        statusFetcher: providerConfig.kind === "codex" ? getLatestCodexStatus : null,
+        workdir: getProviderWorkdir(providerConfig)
+      }
+    ];
+  })
+);
+const providers = new Map(providerEntries);
+
+const botPromises = config.bindings.map((binding) => {
+  const provider = providers.get(binding.providerId);
+
+  if (!provider) {
+    throw new Error(`Missing provider runtime for ${binding.providerId}.`);
+  }
+
+  if (binding.platform === "discord") {
+    return startDiscordBot({
+      allowedBotIds: config.allowedBotIds,
+      botName: binding.botName,
+      botToken: binding.discordBotToken,
+      discordGuildId: config.discordGuildId,
+      orchestrator: provider.orchestrator,
+      providerId: provider.id,
+      providerName: provider.providerName,
+      sessionIdLabel: provider.sessionIdLabel,
+      statusFetcher: provider.statusFetcher,
+      workdir: provider.workdir
+    });
+  }
+
+  if (binding.platform === "feishu") {
+    return startFeishuBot({
+      appId: binding.appId,
+      appSecret: binding.appSecret,
+      botName: binding.botName,
+      orchestrator: provider.orchestrator,
+      providerId: provider.id,
+      providerName: provider.providerName,
+      sessionIdLabel: provider.sessionIdLabel,
+      workdir: provider.workdir
+    });
+  }
+
+  throw new Error(`Unsupported platform binding: ${binding.platform}`);
 });
 
 await Promise.all(botPromises);

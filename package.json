@@ -1,8 +1,8 @@
 {
-  "name": "discord-codex",
+  "name": "no-claw",
   "version": "0.1.0",
   "private": true,
-  "description": "Minimal Discord bot that opens a thread and proxies replies to Codex CLI.",
+  "description": "Minimal IM bridge for Codex and Claude Code on a remote server.",
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -13,6 +13,7 @@
     "test": "node --test"
   },
   "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.59.0",
     "discord.js": "^14.25.1",
     "dotenv": "^17.3.1"
   }

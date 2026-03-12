@@ -7,7 +7,7 @@ import path from "node:path";
 import { getLatestCodexStatus } from "./codex-status.js";
 
 test("getLatestCodexStatus returns the newest token_count event from recent session files", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "discord-codex-status-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "no-claw-status-"));
   const olderDir = path.join(root, "2026", "03", "08");
   const newerDir = path.join(root, "2026", "03", "09");
 
@@ -101,7 +101,7 @@ test("getLatestCodexStatus returns the newest token_count event from recent sess
 });
 
 test("getLatestCodexStatus falls back to the newest non-null rate limits when the newest usage event omits them", async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), "discord-codex-status-"));
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "no-claw-status-"));
   const olderDir = path.join(root, "2026", "03", "08");
   const newerDir = path.join(root, "2026", "03", "09");
 

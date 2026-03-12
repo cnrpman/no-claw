@@ -63,7 +63,7 @@ export async function downloadImageAttachments(message) {
     };
   }
 
-  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "discord-codex-images-"));
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "no-claw-images-"));
 
   try {
     const filePaths = await Promise.all(

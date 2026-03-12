@@ -161,7 +161,7 @@ export class CodexClient {
   }
 
   async #run({ args, prompt, model = null, imagePaths = [], threadId = null }) {
-    const outputFile = path.join(os.tmpdir(), `discord-codex-${randomUUID()}.txt`);
+    const outputFile = path.join(os.tmpdir(), `no-claw-${randomUUID()}.txt`);
     const commandArgs = buildCodexCommandArgs({
       args,
       imagePaths,

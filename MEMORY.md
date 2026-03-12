@@ -25,3 +25,7 @@
 
 - Feishu long-connection event handlers still need to finish within 3 seconds; if the real work is a long-running CLI turn, acknowledge the event immediately and continue the job asynchronously, otherwise Feishu can retry the same event.
 - Feishu long-connection delivery is cluster-mode, not broadcast: if the same app is connected from multiple runtimes, only one client receives a given event.
+
+## 2026-03-13
+
+- When an integration starts using a new third-party endpoint or platform capability, treat the required permissions/scopes as part of the feature itself and update setup docs in the same change instead of letting runtime permission errors surface the requirement later.

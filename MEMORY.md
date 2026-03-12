@@ -20,3 +20,8 @@
 ## 2026-03-11
 
 - `codex` CLI marks `--ask-for-approval on-failure` as deprecated; for non-interactive `codex exec` wrappers, prefer `--ask-for-approval never` and pair it with an explicit sandbox mode instead of relying on older approval behavior.
+
+## 2026-03-12
+
+- Feishu long-connection event handlers still need to finish within 3 seconds; if the real work is a long-running CLI turn, acknowledge the event immediately and continue the job asynchronously, otherwise Feishu can retry the same event.
+- Feishu long-connection delivery is cluster-mode, not broadcast: if the same app is connected from multiple runtimes, only one client receives a given event.

@@ -26,8 +26,8 @@ export function stripLeadingDiscordMentions(content) {
     .trim();
 }
 
-export function parseMentionCommand(content, botUserId) {
-  const body = stripBotMention(content, botUserId);
+export function parsePromptCommand(content) {
+  const body = String(content || "").trim();
 
   if (!body) {
     return {
@@ -51,6 +51,10 @@ export function parseMentionCommand(content, botUserId) {
   };
 }
 
+export function parseMentionCommand(content, botUserId) {
+  return parsePromptCommand(stripBotMention(content, botUserId));
+}
+
 export function canProcessMessageAuthor(author, allowedBotIds = new Set()) {
   return !author.bot || allowedBotIds.has(author.id);
 }
@@ -66,6 +70,8 @@ export function buildTurnStatusMessage({
   providerName = "Codex",
   sessionId,
   sessionIdLabel,
+  contextLabel = "context",
+  contextValue = null,
   usage,
   codexThreadId
 }) {
@@ -73,10 +79,11 @@ export function buildTurnStatusMessage({
   const effectiveSessionIdLabel = sessionIdLabel || `${providerName.toLowerCase()} session`;
   const imageLine = imageCount > 0 ? `${imageCount} attached` : "none";
   const modeLine = mode === "resume" ? `resumed existing ${providerName} session` : `started new ${providerName} session`;
-  const contextLine =
-    mode === "resume"
-      ? `current mention only; history via ${providerName} session`
-      : "current mention only";
+  const effectiveContextValue =
+    contextValue ??
+    (mode === "resume"
+      ? `current message only; history via ${providerName} session`
+      : "current message only");
   const modelLine = model ? `\`${model}\`` : "default (no `-m` passed)";
   const usageLine = usage
     ? `input ${formatCount(usage.input_tokens)} | cached ${formatCount(usage.cached_input_tokens)} | output ${formatCount(usage.output_tokens)}`
@@ -85,7 +92,7 @@ export function buildTurnStatusMessage({
   return [
     `**${providerName} Status**`,
     `mode: ${modeLine}`,
-    `discord context: ${contextLine}`,
+    `${contextLabel}: ${effectiveContextValue}`,
     `images: ${imageLine}`,
     `model arg: ${modelLine}`,
     `${effectiveSessionIdLabel}: \`${effectiveSessionId}\``,
@@ -103,7 +110,7 @@ export function buildThreadName(prompt, prefix = "codex") {
   return `${prefix}: ${normalized}`.slice(0, 100);
 }
 
-export function splitDiscordMessage(text, limit = DISCORD_MESSAGE_LIMIT) {
+export function splitTextMessage(text, limit = DISCORD_MESSAGE_LIMIT) {
   const normalized = text.trim();
 
   if (!normalized) {
@@ -137,6 +144,10 @@ export function splitDiscordMessage(text, limit = DISCORD_MESSAGE_LIMIT) {
   }
 
   return chunks.filter(Boolean);
+}
+
+export function splitDiscordMessage(text, limit = DISCORD_MESSAGE_LIMIT) {
+  return splitTextMessage(text, limit);
 }
 
 export function splitDiscordMessageWithPrefix(prefix, text, limit = DISCORD_MESSAGE_LIMIT) {

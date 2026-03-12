@@ -25,6 +25,10 @@ export class SessionStore {
           },
           threads: parsed.threads
         };
+
+        if (!this.state.stats.lastTurnSessionKey && this.state.stats.lastTurnDiscordThreadId) {
+          this.state.stats.lastTurnSessionKey = this.state.stats.lastTurnDiscordThreadId;
+        }
       }
     } catch (error) {
       if (error.code === "ENOENT") {
@@ -36,8 +40,8 @@ export class SessionStore {
     }
   }
 
-  get(threadId) {
-    return this.state.threads[threadId] ?? null;
+  get(sessionKey) {
+    return this.state.threads[sessionKey] ?? null;
   }
 
   getStats() {
@@ -51,8 +55,10 @@ export class SessionStore {
   }
 
   async upsert(record) {
-    this.state.threads[record.discordThreadId] = {
-      ...this.state.threads[record.discordThreadId],
+    const sessionKey = record.sessionKey ?? record.discordThreadId;
+
+    this.state.threads[sessionKey] = {
+      ...this.state.threads[sessionKey],
       ...record
     };
 
@@ -60,18 +66,20 @@ export class SessionStore {
   }
 
   async recordTurn({
-    discordThreadId,
+    sessionKey,
     imageCount = 0,
     mode,
     requestedModel = null,
     usage = null,
     userId
   }) {
+    const effectiveSessionKey = sessionKey ?? null;
     const nextStats = {
       ...this.state.stats,
       completedTurns: this.state.stats.completedTurns + 1,
       lastTurnAt: new Date().toISOString(),
-      lastTurnDiscordThreadId: discordThreadId,
+      lastTurnDiscordThreadId: effectiveSessionKey,
+      lastTurnSessionKey: effectiveSessionKey,
       lastTurnImageCount: imageCount,
       lastTurnMode: mode,
       lastTurnRequestedModel: requestedModel,
@@ -102,6 +110,7 @@ export class SessionStore {
       completedTurns: 0,
       lastTurnAt: null,
       lastTurnDiscordThreadId: null,
+      lastTurnSessionKey: null,
       lastTurnImageCount: 0,
       lastTurnMode: null,
       lastTurnRequestedModel: null,

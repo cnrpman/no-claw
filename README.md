@@ -160,6 +160,7 @@ If no model is specified, the bot does not pass a model flag, so the underlying 
 - In threads, each bot only resumes threads it created and recorded in its own local session store.
 - Feishu uses the official long-connection mode from `@larksuiteoapi/node-sdk`, so no public webhook URL is required.
 - Feishu event callbacks must be acknowledged quickly, so `no-claw` starts the provider turn asynchronously and sends results later as reply messages.
+- On each valid Feishu request, the bot tries to add a `GLANCE` reaction as a lightweight acknowledgement before sending the normal text replies.
 - Feishu currently supports text messages only.
 - Session state is stored locally in `data/sessions.json` for Codex and `data/claude-sessions.json` for Claude, across both Discord and Feishu conversation keys.
 - The default working directory is `./workspace`, shared by both backends, and is created automatically if it does not exist.

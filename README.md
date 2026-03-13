@@ -20,6 +20,38 @@ No-claw can run:
 - a Claude bridge over Feishu
 - or any enabled combination of those bindings on the same server
 
+## Showcase
+
+The bridge stays inside the native IM workflow while the real local CLI keeps doing the work.
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="./assets/showcase/feishu-group-chat.png" alt="Feishu group chat with bot mentions" width="220" />
+      <br />
+      <sub>Feishu group chat</sub>
+    </td>
+    <td align="center">
+      <img src="./assets/showcase/feishu-thread-first-reply.png" alt="Feishu thread with a first Codex reply" width="220" />
+      <br />
+      <sub>Feishu thread reply</sub>
+    </td>
+    <td align="center">
+      <img src="./assets/showcase/feishu-thread-resume.png" alt="Feishu thread resuming an existing Codex session" width="220" />
+      <br />
+      <sub>Feishu session resume</sub>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="3" align="center">
+      <img src="./assets/showcase/discord-channel-threads.png" alt="Discord channel showing multiple bot threads" width="220" />
+      <img src="./assets/showcase/discord-thread-result.jpg" alt="Discord thread with a Codex response" width="220" />
+      <br />
+      <sub>Discord channel threads and thread replies</sub>
+    </td>
+  </tr>
+</table>
+
 ## What it does
 
 - The server runs the real local CLI (`codex` or `claude`), not a reimplemented agent layer.
